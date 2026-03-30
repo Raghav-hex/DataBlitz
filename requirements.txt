@@ -1,0 +1,30 @@
+# ─── DataBlitz Python Dependencies ──────────────────────────────────────────
+# Core HTTP
+httpx[http2]==0.27.2          # async-first, HTTP/2, replaces requests
+tenacity==9.0.0               # retry logic with exponential backoff
+
+# Data validation
+pydantic==2.7.4               # schema validation — strict mode throughout
+pydantic-settings==2.3.4      # .env loading
+
+# Data handling
+pandas==2.2.2                 # time-series normalisation
+python-dateutil==2.9.0        # date parsing across all API formats
+
+# Brazil-specific (avoids raw BCB API wrangling)
+python-bcb==0.3.6             # BCB SGS + OData APIs (SELIC, IPCA, PTAX)
+
+# Cache
+aiosqlite==0.20.0             # async SQLite for stale-cache layer
+
+# Utilities
+python-dotenv==1.0.1          # .env loading in scripts
+structlog==24.2.0             # structured logging (JSON lines)
+rich==13.7.1                  # pretty console output for scripts/tests
+
+# Testing
+pytest==8.2.2
+pytest-asyncio==0.23.7
+pytest-httpx==0.30.0          # mock httpx calls in unit tests
+respx==0.21.1                 # httpx request mocking
+pytest-cov==5.0.0
