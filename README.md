@@ -1,113 +1,77 @@
-# DataBlitz 🌍⚡
+# DataBlitz ⚡
 
-**AI-Powered Global API Digest** — weekly deep dives where AI queries live government APIs worldwide, crunching economic trends, health stats, climate data, and more into actionable stories you won't find elsewhere.
+Weekly AI insights from live government APIs across USA, UK, India, and Brazil.
+Browse stories, pick what's interesting, go deeper.
 
-## Overview
+## Stack (all forever-free)
 
-DataBlitz ingests open government data from **4 countries** (USA, UK, India, Brazil) across **4 categories** (Economic, Health, Climate, Social), normalises everything into a canonical schema, and feeds it to an AI narrative engine (Claude via Puter.js) that produces the weekly digest.
-
-```
-Government APIs ──► Python Ingestion ──► Cache (SQLite) ──► AI Engine (Puter.js)
-                                                                    │
-                                              Email ◄── Delivery ◄──┘
-                                          Static Site
-```
+| Layer | Tool | Purpose |
+|-------|------|---------|
+| Ingestion | Python 3.12 + httpx | Fetch & validate 15 gov APIs |
+| Cache | SQLite | 48h stale fallback |
+| AI | Puter.js → Claude | Generate narratives |
+| Schedule | GitHub Actions | Weekly cron (Sunday 04:00 UTC) |
+| Storage | Cloudflare KV | Store digest + narrative JSON |
+| Frontend | Cloudflare Pages | Insights browser UI |
+| Edge API | Cloudflare Worker | Serve KV data to frontend |
 
 ## Data Sources
 
-| Country | Source | Category | Auth |
-|---------|--------|----------|------|
-| 🇺🇸 USA | FRED (St. Louis Fed) | Economic | API key |
-| 🇺🇸 USA | BLS | Economic / Social | Reg. key |
-| 🇺🇸 USA | NOAA CDO | Climate | Token |
-| 🇺🇸 USA | CDC Open Data | Health | None |
-| 🇬🇧 UK | ONS Beta API | Economic / Social | None |
-| 🇬🇧 UK | Bank of England | Economic | None |
-| 🇬🇧 UK | Met Office Hadley | Climate | None |
-| 🇬🇧 UK | NHS England | Health | None |
-| 🇮🇳 India | data.gov.in | Economic / Social | API key |
-| 🇮🇳 India | World Bank HNP | Health | None |
-| 🇮🇳 India | OpenAQ | Climate / Health | None |
-| 🇧🇷 Brazil | BCB (Banco Central) | Economic | None |
-| 🇧🇷 Brazil | IBGE SIDRA | Economic / Social | None |
-| 🇧🇷 Brazil | INPE PRODES | Climate | None (CSV) |
-| 🇧🇷 Brazil | PAHO PLISA | Health | None |
-
-## Stack
-
-- **Python 3.12** — ingestion pipeline (httpx async, Pydantic v2, tenacity)
-- **Node.js 22 + Puter.js** — AI narrative engine (free Claude access)
-- **Cloudflare KV + Pages** — storage and static site hosting
-- **Resend** — email newsletter delivery (3k free/month)
-- **n8n** — weekly orchestration / scheduling
-- **Sentry** — error monitoring
-- **Render** — free-tier cron host for Python pipeline
-- **SQLite** — local stale-cache layer (48h TTL)
-
-## Project Structure
-
-```
-datablitz/
-├── ingestion/              # Python data ingestion pipeline
-│   ├── schemas.py          # Canonical Pydantic v2 models
-│   ├── base.py             # Abstract BaseSource + retry logic
-│   ├── cache.py            # Async SQLite stale-cache layer
-│   ├── config.py           # pydantic-settings env config
-│   └── sources/
-│       ├── usa/            # FRED, BLS, NOAA, CDC
-│       ├── uk/             # ONS, BoE, Met Office, NHS
-│       ├── india/          # data.gov.in, World Bank, OpenAQ
-│       └── brazil/         # BCB, IBGE, INPE, PAHO
-├── ai_engine/              # Node.js + Puter.js narrative generator
-├── delivery/               # Email (Resend) + static site output
-├── tests/                  # pytest test suite
-├── scripts/                # Manual run / debug scripts
-└── data/cache/             # SQLite cache (gitignored)
-```
+**USA** — FRED (economic), BLS (labor, no key needed), NOAA (climate), CDC Open Data (health)
+**UK** — ONS Beta API, Bank of England, Met Office Hadley, NHS England
+**India** — World Bank HNP, OpenAQ (air quality)
+**Brazil** — BCB Banco Central, IBGE SIDRA, PAHO/World Bank health
 
 ## Setup
 
 ```bash
-# 1. Clone
 git clone https://github.com/Raghav-hex/DataBlitz.git
 cd DataBlitz
-
-# 2. Python env
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# 3. Environment
-cp .env.example .env
-# Fill in: FRED_API_KEY, BLS_API_KEY, NOAA_CDO_TOKEN, DATA_GOV_IN_KEY
-
-# 4. Test
-pytest
+cp .env.example .env   # fill in API keys
 ```
 
-## API Keys Needed
+### API Keys needed
 
-| Key | Where to get |
-|-----|-------------|
-| `FRED_API_KEY` | https://fred.stlouisfed.org/docs/api/api_key.html (free) |
-| `BLS_API_KEY` | https://data.bls.gov/registrationEngine/ (free) |
-| `NOAA_CDO_TOKEN` | https://www.ncdc.noaa.gov/cdo-web/token (free) |
-| `DATA_GOV_IN_KEY` | https://data.gov.in/user/register (free) |
+| Key | Where to get | Required? |
+|-----|-------------|-----------|
+| FRED_API_KEY | fred.stlouisfed.org/docs/api/api_key.html | Yes |
+| NOAA_CDO_TOKEN | ncdc.noaa.gov/cdo-web/token | Yes |
+| PUTER_AUTH_TOKEN | puter.com -> browser console: localStorage.getItem('puter.auth.token') | Yes (AI) |
+| BLS_API_KEY | — | No (v1 works without) |
+| DATA_GOV_IN_KEY | data.gov.in/user/register | No (World Bank covers India) |
 
-All other sources are open — no key required.
+### GitHub Actions Secrets
 
-## Development
+Add in Settings -> Secrets -> Actions:
+FRED_API_KEY, NOAA_CDO_TOKEN, PUTER_AUTH_TOKEN, CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID, CF_API_TOKEN
+
+### Cloudflare Setup
 
 ```bash
-# Run a single country fetch (dry-run, no AI)
-python scripts/fetch_country.py --country usa
+npm install -g wrangler && wrangler login
 
-# Run full pipeline
-python scripts/run_pipeline.py
+# Create KV namespace — paste the returned id into wrangler.toml
+wrangler kv:namespace create "DATABLITZ_KV"
 
-# Tests with coverage
-pytest --cov=ingestion
+# Deploy edge API Worker
+wrangler deploy
+
+# Deploy frontend: connect repo in Cloudflare Pages dashboard
+# Build command: (none)   Output dir: frontend
 ```
 
-## License
+## Dev
 
-MIT
+```bash
+python scripts/fetch_country.py --country usa   # single country dry-run
+python -m ingestion.pipeline --output ./data/digest_latest.json
+node ai_engine/index.js                          # needs PUTER_AUTH_TOKEN
+# Then open frontend/index.html in browser — loads local narrative_latest.json
+```
+
+## Tests
+
+```bash
+pytest   # 43 tests
+```

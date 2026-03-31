@@ -1,0 +1,12 @@
+name       = "datablitz-api"
+main       = "frontend/worker.js"
+compatibility_date = "2024-11-01"
+
+# KV namespace — create with: wrangler kv:namespace create "DATABLITZ_KV"
+# Then paste the id below
+[[kv_namespaces]]
+binding = "DATABLITZ_KV"
+id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+ENVIRONMENT = "production"
