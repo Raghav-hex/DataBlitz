@@ -31,3 +31,6 @@ ai_engine/package-lock.json
 .vscode/
 .idea/
 *.swp
+data/*.json
+data/*.md
+data/*.html
