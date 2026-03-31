@@ -1,0 +1,48 @@
+# render.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Render.com free-tier deployment for DataBlitz ingestion pipeline.
+# Docs: https://render.com/docs/yaml-spec
+#
+# Services:
+#   1. datablitz-ingest  — Python cron job (weekly, Sunday 03:00 UTC)
+#   2. datablitz-ai      — Node.js cron job (weekly, Sunday 03:30 UTC)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Python ingestion pipeline ──────────────────────────────────────────────
+  - type: cron
+    name: datablitz-ingest
+    runtime: python
+    plan: free
+    region: oregon
+    schedule: "0 3 * * 0"   # Every Sunday 03:00 UTC
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m ingestion.pipeline --output ./data/digest_latest.json
+    envVars:
+      - key: FRED_API_KEY
+        sync: false          # Set manually in Render dashboard
+      - key: BLS_API_KEY
+        sync: false
+      - key: NOAA_CDO_TOKEN
+        sync: false
+      - key: DATA_GOV_IN_KEY
+        sync: false
+      - key: CACHE_DB_PATH
+        value: ./data/cache/datablitz.sqlite
+      - key: CACHE_TTL_HOURS
+        value: "48"
+      - key: HTTP_TIMEOUT_SECONDS
+        value: "30"
+
+  # ── Node.js AI narrative engine ────────────────────────────────────────────
+  - type: cron
+    name: datablitz-ai
+    runtime: node
+    plan: free
+    region: oregon
+    schedule: "30 3 * * 0"  # Every Sunday 03:30 UTC (30 min after ingest)
+    buildCommand: cd ai_engine && npm install
+    startCommand: node ai_engine/index.js
+    envVars:
+      - key: PUTER_AUTH_TOKEN
+        sync: false          # Set manually in Render dashboard

@@ -23,6 +23,10 @@ data/cache/
 .DS_Store
 Thumbs.db
 
+# Node
+ai_engine/node_modules/
+ai_engine/package-lock.json
+
 # Editor
 .vscode/
 .idea/

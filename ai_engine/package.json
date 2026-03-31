@@ -1,0 +1,17 @@
+{
+  "name": "datablitz-ai-engine",
+  "version": "1.0.0",
+  "description": "DataBlitz AI narrative engine — calls Puter.com Claude API server-side",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "generate": "node index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "dependencies": {
+    "@heyputer/puter.js": "^2.8.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
