@@ -299,6 +299,7 @@ p + p { margin-top: 0.9rem; }
     <span id="run-date"><span class="dot amber"></span> Loading...</span>
     <span id="indicator-count"><span class="dot"></span> — indicators</span>
     <span id="countries-count"><span class="dot green"></span> 4 countries</span>
+    <button class="refresh-btn" id="trigger-btn" onclick="triggerPipeline()" style="font-size:0.62rem;padding:0.25rem 0.7rem">Run now</button>
   </div>
 </header>
 
@@ -311,9 +312,10 @@ p + p { margin-top: 0.9rem; }
 
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
-// Point this at your Cloudflare Worker URL after deploying
-// e.g. "https://datablitz-api.YOUR-SUBDOMAIN.workers.dev"
-const API_BASE = window.DATABLITZ_API || 'https://datablitz-api.workers.dev';
+const API_BASE    = window.DATABLITZ_API   || 'https://datablitz-api.workers.dev';
+// Set these to enable the Run Now button:
+// window.GITHUB_TOKEN = 'ghp_your_fine_grained_pat';  // needs: actions:write
+// window.GITHUB_REPO  = 'Raghav-hex/DataBlitz';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -516,6 +518,45 @@ function render(narrative) {
   }
 }
 
+// ── Trigger GitHub Actions run ────────────────────────────────────────────────
+async function triggerPipeline() {
+  const btn = $('trigger-btn');
+  const token = window.GITHUB_TOKEN || '';
+  const repo  = window.GITHUB_REPO  || 'Raghav-hex/DataBlitz';
+
+  if (!token) {
+    alert('Set window.GITHUB_TOKEN in the page config to enable manual triggers.');
+    return;
+  }
+
+  btn.textContent = 'Triggering...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/workflows/weekly_pipeline.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      }
+    );
+    if (res.status === 204) {
+      btn.textContent = 'Pipeline triggered ✓';
+      setTimeout(() => { btn.textContent = 'Run now'; btn.disabled = false; }, 4000);
+    } else {
+      throw new Error(`GitHub API ${res.status}`);
+    }
+  } catch (err) {
+    btn.textContent = 'Failed — check token';
+    btn.disabled = false;
+  }
+}
+
 // ── Fetch + boot ──────────────────────────────────────────────────────────────
 async function loadData() {
   try {
@@ -534,7 +575,6 @@ async function loadData() {
 
 // Dev mode: load local narrative_latest.json if no worker is set
 if (API_BASE.includes('workers.dev')) {
-  // Try loading from local file in dev
   fetch('./data/narrative_latest.json')
     .then(r => r.ok ? r.json() : null)
     .then(d => d ? render(d) : loadData())
