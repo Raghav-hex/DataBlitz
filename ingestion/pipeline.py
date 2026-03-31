@@ -231,3 +231,14 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ─── MiroFish integration hook (Phase 2) ─────────────────────────────────────
+# When ready, call this after run_pipeline() to feed the digest into MiroFish
+# for multi-agent market reaction simulation.
+#
+# from mirofish_bridge import simulate_reactions
+# reactions = await simulate_reactions(global_digest, question="How will investors react?")
+#
+# MiroFish repo: https://github.com/666ghj/MiroFish
+# Offline fork (no cloud APIs): https://github.com/nikmcfly/MiroFish-Offline
