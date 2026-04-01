@@ -29,6 +29,8 @@ from .config import Settings
 from .schemas import Country, CountryDigest, GlobalDigest
 from .enrichment.rss import fetch_news_context
 from .enrichment.trends import fetch_trends_context, format_trends_for_prompt
+from .memory import MemoryLayer, format_historical_context, format_week_over_week
+from .alerts import check_alerts, format_alerts_for_prompt
 from .sources.brazil.bcb import BCBSource
 from .sources.brazil.ibge import IBGESource
 from .sources.brazil.paho import PAHOBrazilSource
@@ -204,6 +206,95 @@ async def run_pipeline(
             logger.info(f"Enrichment written: {total_headlines} headlines, {len(trends_raw)} trend countries")
         except Exception as exc:
             logger.warning(f"Enrichment step failed (non-fatal): {exc}")
+
+        # ── Memory: RAG historical context + week-over-week deltas ────────
+        try:
+            memory = MemoryLayer(db_path=settings.cache_db_path.replace("datablitz.sqlite", "memory.sqlite"))
+            digest_dict = json.loads(out.read_text())
+            week_id = datetime.now(tz=timezone.utc).strftime("%Y-W%V")
+
+            # Build per-country snapshots and query historical context
+            historical_ctx: dict[str, list[dict]] = {}
+            wow_deltas:     dict[str, list[dict]] = {}
+
+            for d in digest_dict.get("digests", []):
+                country = d["country"]
+                inds    = d.get("indicators", [])
+
+                # Build current snapshots for retrieval
+                current_snaps: dict[str, dict] = {}
+                for ind in inds:
+                    obs = ind.get("observations", [])
+                    if not obs:
+                        continue
+                    latest = obs[-1]["value"]
+                    direction = "flat"
+                    if len(obs) >= 2:
+                        prev = obs[-2]["value"]
+                        if prev != 0:
+                            pct = ((latest - prev) / abs(prev)) * 100
+                            direction = "rising" if pct > 0.5 else "falling" if pct < -0.5 else "flat"
+                    current_snaps[ind["id"]] = {"value": latest, "direction": direction}
+
+                # Week-over-week: compare to last stored week
+                last_week = await memory.get_last_week(country, before_week=week_id)
+                if last_week:
+                    deltas = []
+                    for ind in inds:
+                        ind_id = ind["id"]
+                        stored_snap = last_week["snapshots"].get(ind_id)
+                        obs = ind.get("observations", [])
+                        if not obs or not stored_snap:
+                            continue
+                        cur_val  = obs[-1]["value"]
+                        prev_val = stored_snap["value"]
+                        if prev_val == 0:
+                            continue
+                        pct = ((cur_val - prev_val) / abs(prev_val)) * 100
+                        if abs(pct) >= 1.0:  # only log meaningful changes
+                            deltas.append({
+                                "name":      ind.get("name", ind_id),
+                                "prev":      prev_val,
+                                "current":   cur_val,
+                                "pct":       round(pct, 2),
+                                "direction": "up" if pct > 0 else "down",
+                            })
+                    if deltas:
+                        wow_deltas[country] = sorted(deltas, key=lambda x: abs(x["pct"]), reverse=True)[:4]
+
+                # Find similar past weeks (skip if < 2 weeks of history)
+                n_stored = await memory.weeks_stored(country)
+                if n_stored >= 2 and current_snaps:
+                    similar = await memory.find_similar_weeks(
+                        country, current_snaps, n=2, exclude_week=week_id
+                    )
+                    if similar:
+                        historical_ctx[country] = similar
+
+                # Store this week
+                await memory.store_week(
+                    week_id=week_id, country=country, run_id=run_id,
+                    indicators=inds,
+                )
+
+            # Run threshold alerts
+            alerts = check_alerts(digest_dict)
+
+            # Save RAG context for AI engine
+            rag_ctx = {
+                "historical":  format_historical_context(historical_ctx),
+                "wow":         format_week_over_week(wow_deltas),
+                "alerts":      format_alerts_for_prompt(alerts),
+                "alert_count": len(alerts),
+            }
+            rag_path = out.parent / "rag_context.json"
+            rag_path.write_text(json.dumps(rag_ctx, indent=2, ensure_ascii=False))
+            logger.info(
+                f"RAG: {len(historical_ctx)} countries with history, "
+                f"{len(wow_deltas)} with WoW deltas, {len(alerts)} alerts"
+            )
+        except Exception as exc:
+            logger.warning(f"Memory/RAG step failed (non-fatal): {exc}")
 
     return global_digest
 

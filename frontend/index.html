@@ -287,6 +287,25 @@ body { min-height: 100vh; }
 strong { font-weight: 600; }
 em { font-style: italic; }
 p + p { margin-top: 0.9rem; }
+
+/* ── Sparklines ── */
+.sparkline { display: inline-block; vertical-align: middle; margin-left: 0.5rem; }
+
+/* ── Alert badges ── */
+.alert-strip {
+  border-left: 3px solid var(--accent);
+  background: #fff8f7;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.alert-strip .alert-row { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.2rem 0; }
+.alert-badge { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em;
+  text-transform: uppercase; padding: 0.15rem 0.4rem; border-radius: 2px; }
+.badge-critical { background: #fce; color: #900; }
+.badge-warning  { background: #fef3cd; color: #7a5000; }
+.badge-info     { background: #e8f0fe; color: #1a56a0; }
 </style>
 </head>
 <body>
@@ -418,6 +437,15 @@ function render(narrative) {
   $('run-date').innerHTML = `<span class="dot amber"></span> ${runDate.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}`;
   $('indicator-count').innerHTML = `<span class="dot"></span> ${meta.indicator_count ?? '—'} indicators`;
 
+  // ── Threshold Alerts ──────────────────────────────────────────────────────
+  const alertStrip = renderAlerts(narrative);
+  if (alertStrip) {
+    const sh = el('div', 'section-head');
+    sh.innerHTML = `<h2>Threshold Alerts</h2><span class="count">${narrative.meta?.alerts?.length ?? 0} triggered</span>`;
+    app.appendChild(sh);
+    app.appendChild(alertStrip);
+  }
+
   // ── Headline ──────────────────────────────────────────────────────────────
   const headline = sections['HEADLINE'] || '';
   const hStrip = el('div', 'headline-strip');
@@ -516,6 +544,37 @@ function render(narrative) {
     note.innerHTML = `<strong>Methodology:</strong> ${parseMarkdownText(method)}`;
     app.appendChild(note);
   }
+}
+
+// ── Sparkline generator ───────────────────────────────────────────────────────
+function makeSvgSparkline(values, width = 48, height = 18) {
+  if (!values || values.length < 2) return '';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 2) - 1;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const last  = values[values.length - 1];
+  const first = values[0];
+  const color = last > first ? '#2d7a3a' : last < first ? '#c8391a' : '#7a7060';
+  return `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+// ── Alert strip renderer ──────────────────────────────────────────────────────
+function renderAlerts(narrative) {
+  const alerts = narrative.meta?.alerts ?? [];
+  if (!alerts.length) return null;
+  const strip = el('div', 'alert-strip');
+  strip.innerHTML = alerts.map(a => {
+    const badge = a.level === 'critical' ? 'badge-critical' : a.level === 'warning' ? 'badge-warning' : 'badge-info';
+    return `<div class="alert-row"><span class="alert-badge ${badge}">${a.level}</span> ${parseMarkdownText(a.message)} <span style="color:var(--muted);font-size:0.78rem">(${a.value?.toFixed?.(2) ?? a.value})</span></div>`;
+  }).join('');
+  return strip;
 }
 
 // ── Trigger GitHub Actions run ────────────────────────────────────────────────

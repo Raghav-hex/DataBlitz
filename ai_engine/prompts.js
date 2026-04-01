@@ -73,8 +73,18 @@ export function buildDigestPrompt(globalDigest, enrichment = {}) {
   const runDate = new Date(globalDigest.generated_at).toDateString();
   const dataSections = globalDigest.digests.map(formatCountrySection).join('\n');
 
-  // Build enrichment context block if available
+  // Build enrichment context block
   let enrichmentBlock = '';
+
+  if (enrichment.alerts?.trim()) {
+    enrichmentBlock += `\n${enrichment.alerts}\n`;
+  }
+  if (enrichment.historical?.trim()) {
+    enrichmentBlock += `\n${enrichment.historical}\n`;
+  }
+  if (enrichment.wow?.trim()) {
+    enrichmentBlock += `\n${enrichment.wow}\n`;
+  }
   if (enrichment.news && Object.keys(enrichment.news).length > 0) {
     const newsLines = Object.entries(enrichment.news)
       .map(([country, headlines]) =>
@@ -83,7 +93,7 @@ export function buildDigestPrompt(globalDigest, enrichment = {}) {
       ).join('\n');
     enrichmentBlock += `\nTHIS WEEK'S NEWS HEADLINES (use to explain WHY numbers moved):\n${newsLines}\n`;
   }
-  if (enrichment.trends && enrichment.trends.trim()) {
+  if (enrichment.trends?.trim()) {
     enrichmentBlock += `\n${enrichment.trends}\n`;
   }
 

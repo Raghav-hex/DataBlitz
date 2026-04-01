@@ -64,10 +64,25 @@ async function main() {
     console.log('[ai_engine] No enrichment.json found — running without news/trends context');
   }
 
+  // 2b. Load RAG context (historical + WoW + alerts)
+  const ragPath = resolve(ROOT, 'data', 'rag_context.json');
+  let ragCtx = {};
+  if (existsSync(ragPath)) {
+    try {
+      ragCtx = JSON.parse(readFileSync(ragPath, 'utf-8'));
+      console.log(`[ai_engine] RAG loaded: ${ragCtx.alert_count ?? 0} alerts, historical=${!!ragCtx.historical}`);
+    } catch (err) {
+      console.warn(`[ai_engine] Could not load rag_context.json: ${err.message}`);
+    }
+  }
+
   // 3. Build prompt
   const mainPrompt = buildDigestPrompt(digest, {
-    news:   enrichment.news   ?? {},
-    trends: enrichment.trends ?? '',
+    news:        enrichment.news   ?? {},
+    trends:      enrichment.trends ?? '',
+    historical:  ragCtx.historical ?? '',
+    wow:         ragCtx.wow        ?? '',
+    alerts:      ragCtx.alerts     ?? '',
   });
   console.log(`[ai_engine] Prompt: ${mainPrompt.length} chars`);
 
@@ -122,9 +137,36 @@ async function main() {
       main_provider:    mainResult.provider,
       brief_providers:  briefProviders,
       enrichment_used:  !!enrichment.news,
+      alerts:           parseAlerts(ragCtx.alerts ?? ''),
       prompt_chars:     mainPrompt.length,
     },
   };
+
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, JSON.stringify(narrative, null, 2));
+}
+
+/** Parse the formatted alert string back into structured objects for the frontend. */
+function parseAlerts(alertStr) {
+  if (!alertStr) return [];
+  const alerts = [];
+  const lines = alertStr.split('\n');
+  for (const line of lines) {
+    const m = line.match(/\[(\w+)\]\s+([^:]+):\s+([\d.]+)\s+\(threshold:/);
+    if (m) {
+      alerts.push({
+        level:   m[1].toLowerCase(),
+        id:      m[2].trim(),
+        value:   parseFloat(m[3]),
+        message: '',
+      });
+    }
+    // Pick up the message line
+    if (alerts.length > 0 && line.trim().length > 0 && !line.includes('[') && line.startsWith('     ')) {
+      alerts[alerts.length - 1].message = line.trim();
+    }
+  }
+  return alerts;
 
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, JSON.stringify(narrative, null, 2));
