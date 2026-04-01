@@ -65,12 +65,27 @@ function formatCountrySection(digest) {
 /**
  * Build the full prompt for the weekly digest generation.
  *
- * @param {object} globalDigest - The parsed GlobalDigest JSON object
- * @returns {string} - Complete prompt ready for Claude
+ * @param {object} globalDigest  - The parsed GlobalDigest JSON object
+ * @param {object} enrichment    - Optional: { news, trends } from RSS + Google Trends
+ * @returns {string} - Complete prompt ready for Claude/Grok/Gemini
  */
-export function buildDigestPrompt(globalDigest) {
+export function buildDigestPrompt(globalDigest, enrichment = {}) {
   const runDate = new Date(globalDigest.generated_at).toDateString();
   const dataSections = globalDigest.digests.map(formatCountrySection).join('\n');
+
+  // Build enrichment context block if available
+  let enrichmentBlock = '';
+  if (enrichment.news && Object.keys(enrichment.news).length > 0) {
+    const newsLines = Object.entries(enrichment.news)
+      .map(([country, headlines]) =>
+        `  ${country.toUpperCase()}:\n` +
+        headlines.map(h => `    - ${h}`).join('\n')
+      ).join('\n');
+    enrichmentBlock += `\nTHIS WEEK'S NEWS HEADLINES (use to explain WHY numbers moved):\n${newsLines}\n`;
+  }
+  if (enrichment.trends && enrichment.trends.trim()) {
+    enrichmentBlock += `\n${enrichment.trends}\n`;
+  }
 
   return `You are the lead analyst and writer for DataBlitz — a weekly global data digest that finds surprising, non-obvious stories in open government data across 4 countries: USA, UK, India, and Brazil.
 
@@ -80,7 +95,7 @@ Run ID: ${globalDigest.run_id}
 ═══════════════════════════════════════════
 LIVE DATA FROM GOVERNMENT APIS THIS WEEK
 ═══════════════════════════════════════════
-${dataSections}
+${dataSections}${enrichmentBlock}
 ═══════════════════════════════════════════
 
 YOUR TASK:
@@ -122,23 +137,27 @@ Begin:`;
 
 /**
  * Build a shorter "data brief" prompt for individual country summaries.
- * Used when generating per-country email sections.
  *
- * @param {object} countryDigest - Single CountryDigest object
+ * @param {object} countryDigest    - Single CountryDigest object
+ * @param {string[]} recentHeadlines - Optional RSS headlines for this country
  * @returns {string}
  */
-export function buildCountryBriefPrompt(countryDigest) {
+export function buildCountryBriefPrompt(countryDigest, recentHeadlines = []) {
   const section = formatCountrySection(countryDigest);
   const country = countryDigest.country.toUpperCase();
+
+  const newsBlock = recentHeadlines.length > 0
+    ? `\nRECENT NEWS:\n${recentHeadlines.slice(0, 4).map(h => `  - ${h}`).join('\n')}\n`
+    : '';
 
   return `You are a concise data journalist. Write a 150-word brief on ${country}'s key economic and social data movements this week.
 
 DATA:
-${section}
-
+${section}${newsBlock}
 Requirements:
 - Focus on the single most significant change
 - Use the actual numbers
+- Reference news context if provided — explain *why* the data moved
 - End with one "watch for" forward-looking note
 - Tone: crisp, analytical, no fluff
 

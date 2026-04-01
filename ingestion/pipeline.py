@@ -27,6 +27,8 @@ import httpx
 from .cache import CacheLayer
 from .config import Settings
 from .schemas import Country, CountryDigest, GlobalDigest
+from .enrichment.rss import fetch_news_context
+from .enrichment.trends import fetch_trends_context, format_trends_for_prompt
 from .sources.brazil.bcb import BCBSource
 from .sources.brazil.ibge import IBGESource
 from .sources.brazil.paho import PAHOBrazilSource
@@ -176,6 +178,32 @@ async def run_pipeline(
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(global_digest.model_dump_json(indent=2))
         logger.info(f"Output written to {output_path}")
+
+        # Fetch enrichment (RSS + Trends) and save alongside digest
+        logger.info("Fetching enrichment (RSS news + Google Trends)...")
+        try:
+            news, trends_raw = await asyncio.gather(
+                fetch_news_context(),
+                fetch_trends_context(),
+                return_exceptions=True,
+            )
+            if isinstance(news, Exception):
+                logger.warning(f"RSS fetch failed: {news}")
+                news = {}
+            if isinstance(trends_raw, Exception):
+                logger.warning(f"Trends fetch failed: {trends_raw}")
+                trends_raw = {}
+
+            trends_str = format_trends_for_prompt(trends_raw)
+            enrichment = {"news": news, "trends": trends_str, "trends_raw": trends_raw}
+
+            enrichment_path = out.parent / "enrichment.json"
+            import json
+            enrichment_path.write_text(json.dumps(enrichment, indent=2, ensure_ascii=False))
+            total_headlines = sum(len(v) for v in news.values())
+            logger.info(f"Enrichment written: {total_headlines} headlines, {len(trends_raw)} trend countries")
+        except Exception as exc:
+            logger.warning(f"Enrichment step failed (non-fatal): {exc}")
 
     return global_digest
 
