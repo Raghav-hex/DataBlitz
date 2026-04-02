@@ -91,8 +91,15 @@ def main() -> None:
         "week":            now.strftime("%Y-W%V"),
     }
     kv_put("meta:last_run", json.dumps(meta))
-
     print(f"\nDone — {indicator_count} indicators pushed to KV")
+
+    # Write to Obsidian vault (non-fatal if not configured)
+    if narrative_path.exists():
+        try:
+            from delivery.obsidian_writer import write_to_obsidian
+            write_to_obsidian(str(narrative_path))
+        except Exception as exc:
+            print(f"  Obsidian write skipped: {exc}")
 
 
 if __name__ == "__main__":

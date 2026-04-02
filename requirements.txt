@@ -23,6 +23,7 @@ structlog==24.2.0             # structured logging (JSON lines)
 rich==13.7.1                  # pretty console output for scripts/tests
 
 # Enrichment (news + trends context for AI)
+yfinance==1.2.0              # stock/ETF/FX data, no API key needed
 feedparser==6.0.12           # RSS feed parser, no auth needed
 pytrends==4.9.2              # Google Trends unofficial API, no auth needed
 

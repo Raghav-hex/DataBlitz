@@ -31,6 +31,7 @@ from .enrichment.rss import fetch_news_context
 from .enrichment.trends import fetch_trends_context, format_trends_for_prompt
 from .memory import MemoryLayer, format_historical_context, format_week_over_week
 from .alerts import check_alerts, format_alerts_for_prompt
+from .sources.stocks import fetch_stock_context, format_stocks_for_prompt
 from .sources.brazil.bcb import BCBSource
 from .sources.brazil.ibge import IBGESource
 from .sources.brazil.paho import PAHOBrazilSource
@@ -184,20 +185,25 @@ async def run_pipeline(
         # Fetch enrichment (RSS + Trends) and save alongside digest
         logger.info("Fetching enrichment (RSS news + Google Trends)...")
         try:
-            news, trends_raw = await asyncio.gather(
+            news, trends_raw, stock_data = await asyncio.gather(
                 fetch_news_context(),
                 fetch_trends_context(),
+                fetch_stock_context(),
                 return_exceptions=True,
             )
             if isinstance(news, Exception):
-                logger.warning(f"RSS fetch failed: {news}")
-                news = {}
+                logger.warning(f"RSS fetch failed: {news}"); news = {}
             if isinstance(trends_raw, Exception):
-                logger.warning(f"Trends fetch failed: {trends_raw}")
-                trends_raw = {}
+                logger.warning(f"Trends fetch failed: {trends_raw}"); trends_raw = {}
+            if isinstance(stock_data, Exception):
+                logger.warning(f"Stock fetch failed: {stock_data}"); stock_data = {}
 
             trends_str = format_trends_for_prompt(trends_raw)
-            enrichment = {"news": news, "trends": trends_str, "trends_raw": trends_raw}
+            stocks_str = format_stocks_for_prompt(stock_data)
+            enrichment = {
+                "news": news, "trends": trends_str, "trends_raw": trends_raw,
+                "stocks": stocks_str,
+            }
 
             enrichment_path = out.parent / "enrichment.json"
             import json

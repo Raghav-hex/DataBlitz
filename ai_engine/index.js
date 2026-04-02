@@ -17,7 +17,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { tryWithFallback } from './fallback_client.js';
+import { runMultiAgentPipeline, runCountryBriefAgents } from './agents.js';
 import { buildDigestPrompt, buildCountryBriefPrompt } from './prompts.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -92,53 +92,40 @@ async function main() {
     return;
   }
 
-  // 4. Generate main narrative (with fallback chain)
-  console.log('[ai_engine] Generating main narrative...');
-  let mainResult;
+  // 4. Run multi-agent pipeline (4 country analysts → synthesizer)
+  console.log('[ai_engine] Starting multi-agent pipeline...');
+  let agentResult, briefResult;
   try {
-    mainResult = await tryWithFallback(mainPrompt, { maxTokens: 4096, temperature: 0.75 });
-    console.log(`[ai_engine] Main narrative: ${mainResult.text.length} chars via ${mainResult.provider}`);
+    [agentResult, briefResult] = await Promise.all([
+      runMultiAgentPipeline(digest, enrichment, ragCtx),
+      runCountryBriefAgents(digest, enrichment),
+    ]);
   } catch (err) {
-    console.error(`[ai_engine] All AI providers failed: ${err.message}`);
+    console.error(`[ai_engine] Multi-agent pipeline failed: ${err.message}`);
     process.exit(1);
   }
 
-  // 5. Generate per-country briefs in parallel (shorter, fallback also applies)
-  console.log('[ai_engine] Generating country briefs...');
-  const briefResults = await Promise.allSettled(
-    digest.digests.map(async (cd) => {
-      const prompt = buildCountryBriefPrompt(cd, enrichment.news?.[cd.country] ?? []);
-      const result = await tryWithFallback(prompt, { maxTokens: 512, temperature: 0.6 });
-      console.log(`[ai_engine]   ${cd.country}: ${result.text.length} chars via ${result.provider}`);
-      return { country: cd.country, brief: result.text, provider: result.provider };
-    })
-  );
-
-  const countryBriefs  = {};
-  const briefProviders = {};
-  for (const r of briefResults) {
-    if (r.status === 'fulfilled') {
-      countryBriefs[r.value.country]  = r.value.brief;
-      briefProviders[r.value.country] = r.value.provider;
-    } else {
-      console.warn(`[ai_engine] Brief failed: ${r.reason}`);
-    }
-  }
+  const mainNarrative  = agentResult.mainNarrative;
+  const countryBriefs  = briefResult.briefs;
+  const briefProviders = briefResult.providers;
 
   // 6. Write output
   const narrative = {
     run_id:          digest.run_id,
     generated_at:    new Date().toISOString(),
-    main_narrative:  mainResult.text,
+    main_narrative:  mainNarrative,
     country_briefs:  countryBriefs,
+    agent_analyses:  agentResult.countryAnalyses,  // raw analyst outputs for debugging
     meta: {
-      indicators_total: digest.digests.reduce((s, d) => s + (d.indicators?.length ?? 0), 0),
-      countries:        digest.digests.map(d => d.country),
-      main_provider:    mainResult.provider,
-      brief_providers:  briefProviders,
-      enrichment_used:  !!enrichment.news,
-      alerts:           parseAlerts(ragCtx.alerts ?? ''),
-      prompt_chars:     mainPrompt.length,
+      indicators_total:  digest.digests.reduce((s, d) => s + (d.indicators?.length ?? 0), 0),
+      countries:         digest.digests.map(d => d.country),
+      synthesizer:       agentResult.providers.synthesizer,
+      analyst_providers: agentResult.providers.analysts,
+      brief_providers:   briefProviders,
+      enrichment_used:   !!enrichment.news,
+      stocks_used:       !!enrichment.stocks,
+      alerts:            parseAlerts(ragCtx.alerts ?? ''),
+      prompt_chars:      mainPrompt.length,
     },
   };
 

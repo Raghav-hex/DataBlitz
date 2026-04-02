@@ -37,6 +37,8 @@ function formatIndicator(ind) {
 
 /**
  * Format one country's full digest section.
+ * Exported as both formatCountrySection (for main prompt)
+ * and formatCountrySectionRaw (for agent consumption).
  */
 function formatCountrySection(digest) {
   const country = digest.country.toUpperCase();
@@ -173,3 +175,5 @@ Requirements:
 
 Write the brief:`;
 }
+
+export { formatCountrySection as formatCountrySectionRaw };

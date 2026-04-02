@@ -1,0 +1,169 @@
+name: MiroFish Simulation
+
+# Trigger manually from GitHub UI whenever you want a simulation
+# Actions → MiroFish Simulation → Run workflow → fill inputs → Run
+on:
+  workflow_dispatch:
+    inputs:
+      seed_text:
+        description: 'Seed material — paste the DataBlitz narrative or any financial text'
+        required: true
+        type: string
+      prediction_question:
+        description: 'What do you want to predict? e.g. "How will investors react to Brazil SELIC at 14.25%?"'
+        required: true
+        type: string
+      simulation_rounds:
+        description: 'Simulation rounds (10-30 recommended for free tier, fewer = faster)'
+        required: false
+        default: '15'
+        type: string
+
+jobs:
+  mirofish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45   # MiroFish needs time; GH Actions free = 2000 min/month
+
+    steps:
+      - name: Checkout DataBlitz
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # MiroFish requires 3.11-3.12
+
+      - name: Setup Node 18+
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Clone MiroFish (English fork)
+        run: |
+          git clone https://github.com/bigmansablo/MiroFish-EN.git mirofish
+          echo "MiroFish cloned"
+
+      - name: Install MiroFish dependencies
+        working-directory: mirofish
+        run: |
+          npm run setup:all || (npm install && cd backend && pip install -r requirements.txt)
+
+      - name: Configure MiroFish with Gemini (free tier)
+        working-directory: mirofish
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # MiroFish accepts any OpenAI-compatible API
+          # Gemini has an OpenAI-compatible endpoint — perfect for free tier
+          cat > .env << EOF
+          LLM_API_KEY=${GEMINI_API_KEY}
+          LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+          LLM_MODEL_NAME=gemini-2.5-flash-lite
+          ZEP_API_KEY=
+          EOF
+          echo "MiroFish configured with Gemini Flash-Lite"
+
+      - name: Write seed material to file
+        run: |
+          mkdir -p mirofish/seeds
+          cat > mirofish/seeds/datablitz_seed.txt << 'SEED'
+          ${{ github.event.inputs.seed_text }}
+          SEED
+          echo "Seed written ($(wc -c < mirofish/seeds/datablitz_seed.txt) bytes)"
+
+      - name: Run MiroFish simulation (headless)
+        working-directory: mirofish
+        env:
+          PREDICTION_QUESTION: ${{ github.event.inputs.prediction_question }}
+          SIMULATION_ROUNDS:   ${{ github.event.inputs.simulation_rounds }}
+        run: |
+          # Run MiroFish in headless/CLI mode if available
+          # Falls back to starting the server and using the REST API
+          if python backend/run_headless.py \
+              --seed seeds/datablitz_seed.txt \
+              --question "${PREDICTION_QUESTION}" \
+              --rounds "${SIMULATION_ROUNDS}" \
+              --output ../data/mirofish_report.json 2>/dev/null; then
+            echo "Headless mode succeeded"
+          else
+            echo "Starting server mode..."
+            # Start backend
+            cd backend && python run.py &
+            sleep 10  # wait for server
+
+            # Submit simulation via REST API
+            curl -s -X POST http://localhost:5001/api/simulate \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"seed_text\": $(cat ../seeds/datablitz_seed.txt | python -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+                \"question\":  \"${PREDICTION_QUESTION}\",
+                \"rounds\":    ${SIMULATION_ROUNDS}
+              }" > ../data/mirofish_raw.json
+
+            # Wait for simulation to complete (poll)
+            for i in $(seq 1 60); do
+              STATUS=$(curl -s http://localhost:5001/api/status | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("status","unknown"))' 2>/dev/null)
+              echo "Status check $i: $STATUS"
+              if [ "$STATUS" = "complete" ]; then break; fi
+              sleep 20
+            done
+
+            # Fetch report
+            curl -s http://localhost:5001/api/report > ../data/mirofish_report.json
+          fi
+
+          echo "Simulation complete"
+
+      - name: Format report as markdown
+        run: |
+          python3 << 'PY'
+          import json, pathlib, datetime
+
+          report_path = pathlib.Path("data/mirofish_report.json")
+          if not report_path.exists():
+              # Create minimal report from whatever we have
+              report_path.write_text(json.dumps({"status": "partial", "note": "Server mode may need manual run"}))
+
+          report = json.loads(report_path.read_text())
+          week   = datetime.datetime.now().strftime("%Y-W%V")
+          question = "${{ github.event.inputs.prediction_question }}"
+
+          md = f"""# MiroFish Simulation Report — {week}
+
+**Question:** {question}
+**Rounds:** ${{ github.event.inputs.simulation_rounds }}
+**Generated:** {datetime.datetime.now().isoformat()[:16]}
+
+---
+
+## Prediction Report
+
+```
+{json.dumps(report, indent=2, ensure_ascii=False)[:8000]}
+```
+
+---
+*Generated by DataBlitz MiroFish workflow — data fed from DataBlitz weekly digest*
+"""
+          pathlib.Path("data/mirofish_report.md").write_text(md)
+          print("Report formatted")
+          PY
+
+      - name: Upload simulation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirofish-${{ github.run_id }}
+          path: |
+            data/mirofish_report.json
+            data/mirofish_report.md
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## MiroFish Simulation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Question:** ${{ github.event.inputs.prediction_question }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Rounds:** ${{ github.event.inputs.simulation_rounds }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the report from the Artifacts section above." >> $GITHUB_STEP_SUMMARY

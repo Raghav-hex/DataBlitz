@@ -52,9 +52,11 @@ jobs:
 
       - name: Push digest to Cloudflare KV
         env:
-          CF_ACCOUNT_ID:    ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE:  ${{ secrets.CF_KV_NAMESPACE_ID }}
-          CF_API_TOKEN:     ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID:         ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE:       ${{ secrets.CF_KV_NAMESPACE_ID }}
+          CF_API_TOKEN:          ${{ secrets.CF_API_TOKEN }}
+          OBSIDIAN_VAULT_REPO:   ${{ secrets.OBSIDIAN_VAULT_REPO }}
+          OBSIDIAN_GITHUB_TOKEN: ${{ secrets.OBSIDIAN_GITHUB_TOKEN }}
         run: python delivery/push_to_kv.py
 
       - name: Upload artifacts (debug)
