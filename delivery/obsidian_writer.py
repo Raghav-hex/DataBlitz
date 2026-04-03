@@ -165,7 +165,13 @@ synthesizer: "{meta.get("synthesizer", "")}"
         for c, brief in briefs.items():
             brief_block += f"### [[Country Notes/{c.upper()}/{week_id}|{c.upper()}]]\n\n{brief}\n\n"
 
-        return frontmatter + header + alert_block + text + "\n\n---\n\n" + brief_block
+        # Psychohistory structural analysis section
+        psycho      = narrative.get("psychohistory", "")
+        psycho_block = ""
+        if psycho:
+            psycho_block = "## 🔬 Structural Analysis\n\n" + psycho + "\n\n---\n\n"
+
+        return frontmatter + header + alert_block + psycho_block + text + "\n\n---\n\n" + brief_block
 
     def _format_country_note(self, country: str, analysis: str, narrative: dict, week_id: str) -> str:
         date = narrative.get("generated_at", "")[:10]

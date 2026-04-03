@@ -32,6 +32,9 @@ from .enrichment.trends import fetch_trends_context, format_trends_for_prompt
 from .memory import MemoryLayer, format_historical_context, format_week_over_week
 from .alerts import check_alerts, format_alerts_for_prompt
 from .sources.stocks import fetch_stock_context, format_stocks_for_prompt
+from .psychohistory.turchin import compute_psi, format_psi_for_prompt, PSIComponents
+from .psychohistory.gdelt import fetch_gdelt_signals, format_gdelt_for_prompt
+from .psychohistory.analogies import find_active_analogies, format_analogies_for_prompt
 from .sources.brazil.bcb import BCBSource
 from .sources.brazil.ibge import IBGESource
 from .sources.brazil.paho import PAHOBrazilSource
@@ -185,10 +188,11 @@ async def run_pipeline(
         # Fetch enrichment (RSS + Trends) and save alongside digest
         logger.info("Fetching enrichment (RSS news + Google Trends)...")
         try:
-            news, trends_raw, stock_data = await asyncio.gather(
+            news, trends_raw, stock_data, gdelt_signals = await asyncio.gather(
                 fetch_news_context(),
                 fetch_trends_context(),
                 fetch_stock_context(),
+                fetch_gdelt_signals(),
                 return_exceptions=True,
             )
             if isinstance(news, Exception):
@@ -197,12 +201,41 @@ async def run_pipeline(
                 logger.warning(f"Trends fetch failed: {trends_raw}"); trends_raw = {}
             if isinstance(stock_data, Exception):
                 logger.warning(f"Stock fetch failed: {stock_data}"); stock_data = {}
+            if isinstance(gdelt_signals, Exception):
+                logger.warning(f"GDELT fetch failed: {gdelt_signals}"); gdelt_signals = {}
 
             trends_str = format_trends_for_prompt(trends_raw)
             stocks_str = format_stocks_for_prompt(stock_data)
+            gdelt_str  = format_gdelt_for_prompt(gdelt_signals)
+
+            # Compute Turchin PSI for each country
+            digest_dict_for_psi = json.loads(out.read_text())
+            psi_scores: dict[str, PSIComponents] = {}
+            analog_by_country: dict[str, list] = {}
+
+            for d in digest_dict_for_psi.get("digests", []):
+                country = d["country"]
+                inds    = d.get("indicators", [])
+                psi = compute_psi(country, inds)
+                if psi:
+                    psi_scores[country] = psi
+                    gdelt_sig = gdelt_signals.get(country) if not isinstance(gdelt_signals, Exception) else None
+                    analogs = find_active_analogies(country, psi.psi, psi, gdelt_sig)
+                    if analogs:
+                        analog_by_country[country] = analogs
+
+            psi_str     = format_psi_for_prompt(psi_scores)
+            analogs_str = format_analogies_for_prompt(analog_by_country)
+
             enrichment = {
                 "news": news, "trends": trends_str, "trends_raw": trends_raw,
                 "stocks": stocks_str,
+                # Psychohistory context block (passed to AI engine)
+                "psycho": {
+                    "psi":     psi_str,
+                    "gdelt":   gdelt_str,
+                    "analogs": analogs_str,
+                },
             }
 
             enrichment_path = out.parent / "enrichment.json"

@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { runMultiAgentPipeline, runCountryBriefAgents } from './agents.js';
+import { runPsychohistorianAgent } from './psychohistorian_agent.js';
 import { buildDigestPrompt, buildCountryBriefPrompt } from './prompts.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -92,13 +93,16 @@ async function main() {
     return;
   }
 
-  // 4. Run multi-agent pipeline (4 country analysts → synthesizer)
-  console.log('[ai_engine] Starting multi-agent pipeline...');
-  let agentResult, briefResult;
+  // 4. Run multi-agent pipeline + psychohistorian concurrently
+  console.log('[ai_engine] Starting multi-agent pipeline + psychohistorian...');
+  const psychoCtx = enrichment.psycho ?? {};
+
+  let agentResult, briefResult, psychoResult;
   try {
-    [agentResult, briefResult] = await Promise.all([
+    [agentResult, briefResult, psychoResult] = await Promise.all([
       runMultiAgentPipeline(digest, enrichment, ragCtx),
       runCountryBriefAgents(digest, enrichment),
+      runPsychohistorianAgent(digest, enrichment, ragCtx, psychoCtx),
     ]);
   } catch (err) {
     console.error(`[ai_engine] Multi-agent pipeline failed: ${err.message}`);
@@ -111,21 +115,25 @@ async function main() {
 
   // 6. Write output
   const narrative = {
-    run_id:          digest.run_id,
-    generated_at:    new Date().toISOString(),
-    main_narrative:  mainNarrative,
-    country_briefs:  countryBriefs,
-    agent_analyses:  agentResult.countryAnalyses,  // raw analyst outputs for debugging
+    run_id:               digest.run_id,
+    generated_at:         new Date().toISOString(),
+    main_narrative:       mainNarrative,
+    psychohistory:        psychoResult?.text ?? null,      // Structural analysis section
+    country_briefs:       countryBriefs,
+    agent_analyses:       agentResult.countryAnalyses,
     meta: {
-      indicators_total:  digest.digests.reduce((s, d) => s + (d.indicators?.length ?? 0), 0),
-      countries:         digest.digests.map(d => d.country),
-      synthesizer:       agentResult.providers.synthesizer,
-      analyst_providers: agentResult.providers.analysts,
-      brief_providers:   briefProviders,
-      enrichment_used:   !!enrichment.news,
-      stocks_used:       !!enrichment.stocks,
-      alerts:            parseAlerts(ragCtx.alerts ?? ''),
-      prompt_chars:      mainPrompt.length,
+      indicators_total:   digest.digests.reduce((s, d) => s + (d.indicators?.length ?? 0), 0),
+      countries:          digest.digests.map(d => d.country),
+      synthesizer:        agentResult.providers.synthesizer,
+      analyst_providers:  agentResult.providers.analysts,
+      psycho_provider:    psychoResult?.provider ?? null,
+      brief_providers:    briefProviders,
+      enrichment_used:    !!enrichment.news,
+      stocks_used:        !!enrichment.stocks,
+      psi_computed:       !!(enrichment.psycho?.psi),
+      gdelt_used:         !!(enrichment.psycho?.gdelt),
+      alerts:             parseAlerts(ragCtx.alerts ?? ''),
+      prompt_chars:       mainPrompt.length,
     },
   };
 

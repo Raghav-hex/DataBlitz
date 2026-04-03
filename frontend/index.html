@@ -437,6 +437,17 @@ function render(narrative) {
   $('run-date').innerHTML = `<span class="dot amber"></span> ${runDate.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}`;
   $('indicator-count').innerHTML = `<span class="dot"></span> ${meta.indicator_count ?? '—'} indicators`;
 
+  // ── Psychohistorian Analysis ──────────────────────────────────────────────
+  if (narrative.psychohistory) {
+    const sh = el('div', 'section-head');
+    sh.innerHTML = `<h2>Structural Analysis</h2><span class="count">Turchin SDT + Jiang's 3-stage framework</span>`;
+    app.appendChild(sh);
+    const box = el('div', 'signal-box');
+    box.style.borderLeftColor = '#1a56a0';
+    box.innerHTML = textToHtml(narrative.psychohistory);
+    app.appendChild(box);
+  }
+
   // ── Threshold Alerts ──────────────────────────────────────────────────────
   const alertStrip = renderAlerts(narrative);
   if (alertStrip) {
