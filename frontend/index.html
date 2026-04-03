@@ -437,6 +437,17 @@ function render(narrative) {
   $('run-date').innerHTML = `<span class="dot amber"></span> ${runDate.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}`;
   $('indicator-count').innerHTML = `<span class="dot"></span> ${meta.indicator_count ?? '—'} indicators`;
 
+  // ── Scenario Planning (Jiang's 3-scenario framework) ──────────────────────
+  if (narrative.scenario_planning) {
+    const sh = el('div', 'section-head');
+    sh.innerHTML = `<h2>Scenario Planning</h2><span class="count">3 game-theory scenarios</span>`;
+    app.appendChild(sh);
+    const box = el('div', 'signal-box');
+    box.style.cssText += ';border-left-color:#2d7a3a;background:#f7fdf8';
+    box.innerHTML = textToHtml(narrative.scenario_planning);
+    app.appendChild(box);
+  }
+
   // ── Psychohistorian Analysis ──────────────────────────────────────────────
   if (narrative.psychohistory) {
     const sh = el('div', 'section-head');

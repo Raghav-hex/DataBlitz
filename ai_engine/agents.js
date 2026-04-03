@@ -272,3 +272,44 @@ function extractCountryHistory(historicalStr, country) {
   }
   return block.join('\n').trim();
 }
+
+// ── Exported internal phase functions (for index.js two-phase orchestration) ──
+
+export async function _runCountryAnalysts(digest, enrichment, ragCtx) {
+  const analystTasks = COUNTRIES.map(async (country) => {
+    const prompt = buildAnalystPrompt(country, digest, enrichment, ragCtx);
+    if (!prompt) return { country, result: null };
+    try {
+      console.log(`[agents] ${country.toUpperCase()} analyst starting...`);
+      const result = await tryWithFallback(prompt, { maxTokens: 1024, temperature: 0.65 });
+      console.log(`[agents] ${country.toUpperCase()} done (${result.text.length} chars, ${result.provider})`);
+      return { country, result };
+    } catch (err) {
+      console.error(`[agents] ${country.toUpperCase()} failed: ${err.message}`);
+      return { country, result: null };
+    }
+  });
+  const outputs = await Promise.all(analystTasks);
+  const countryAnalyses = {}, providerMap = {};
+  for (const { country, result } of outputs) {
+    if (result) { countryAnalyses[country] = result.text; providerMap[country] = result.provider; }
+  }
+  return { countryAnalyses, providerMap };
+}
+
+export async function _runSynthesizer(analystData, digest, enrichment, ragCtx, psychoResult) {
+  const { countryAnalyses, providerMap } = analystData;
+  const psychoBlock = psychoResult?.text
+    ? `\n━━ PSYCHOHISTORIAN STRUCTURAL ANALYSIS ━━\n${psychoResult.text}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    : '';
+  const prompt = buildSynthesizerPrompt(countryAnalyses, digest, enrichment, ragCtx)
+    .replace('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nCOUNTRY ANALYST REPORTS',
+             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${psychoBlock}\nCOUNTRY ANALYST REPORTS`);
+  const result = await tryWithFallback(prompt, { maxTokens: 4096, temperature: 0.72 });
+  console.log(`[agents] Synthesizer done (${result.text.length} chars, ${result.provider})`);
+  return {
+    mainNarrative: result.text,
+    countryAnalyses,
+    providers: { synthesizer: result.provider, analysts: providerMap },
+  };
+}

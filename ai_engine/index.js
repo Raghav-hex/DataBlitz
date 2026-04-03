@@ -17,8 +17,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { runMultiAgentPipeline, runCountryBriefAgents } from './agents.js';
+import { runMultiAgentPipeline, runCountryBriefAgents,
+         _runCountryAnalysts, _runSynthesizer } from './agents.js';
 import { runPsychohistorianAgent } from './psychohistorian_agent.js';
+import { runScenarioPlannerAgent } from './scenario_agent.js';
 import { buildDigestPrompt, buildCountryBriefPrompt } from './prompts.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -93,19 +95,32 @@ async function main() {
     return;
   }
 
-  // 4. Run multi-agent pipeline + psychohistorian concurrently
-  console.log('[ai_engine] Starting multi-agent pipeline + psychohistorian...');
+  // 4. Phase 1: country analysts + psychohistorian in parallel
+  console.log('[ai_engine] Phase 1: country analysts + psychohistorian (parallel)...');
   const psychoCtx = enrichment.psycho ?? {};
 
-  let agentResult, briefResult, psychoResult;
+  let analystOutputs, psychoResult;
   try {
-    [agentResult, briefResult, psychoResult] = await Promise.all([
-      runMultiAgentPipeline(digest, enrichment, ragCtx),
-      runCountryBriefAgents(digest, enrichment),
+    [analystOutputs, psychoResult] = await Promise.all([
+      _runCountryAnalysts(digest, enrichment, ragCtx),
       runPsychohistorianAgent(digest, enrichment, ragCtx, psychoCtx),
     ]);
   } catch (err) {
-    console.error(`[ai_engine] Multi-agent pipeline failed: ${err.message}`);
+    console.error(`[ai_engine] Phase 1 failed: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Phase 2: synthesizer + scenario planner + briefs (all see psychohistorian output)
+  console.log('[ai_engine] Phase 2: synthesizer + scenarios + briefs...');
+  let agentResult, scenarioResult, briefResult;
+  try {
+    [agentResult, scenarioResult, briefResult] = await Promise.all([
+      _runSynthesizer(analystOutputs, digest, enrichment, ragCtx, psychoResult),
+      runScenarioPlannerAgent(digest, enrichment, ragCtx, psychoCtx, psychoResult),
+      runCountryBriefAgents(digest, enrichment),
+    ]);
+  } catch (err) {
+    console.error(`[ai_engine] Phase 2 failed: ${err.message}`);
     process.exit(1);
   }
 
@@ -118,7 +133,8 @@ async function main() {
     run_id:               digest.run_id,
     generated_at:         new Date().toISOString(),
     main_narrative:       mainNarrative,
-    psychohistory:        psychoResult?.text ?? null,      // Structural analysis section
+    psychohistory:        psychoResult?.text ?? null,
+    scenario_planning:    scenarioResult?.text ?? null,
     country_briefs:       countryBriefs,
     agent_analyses:       agentResult.countryAnalyses,
     meta: {
@@ -127,6 +143,7 @@ async function main() {
       synthesizer:        agentResult.providers.synthesizer,
       analyst_providers:  agentResult.providers.analysts,
       psycho_provider:    psychoResult?.provider ?? null,
+      scenario_provider:  scenarioResult?.provider ?? null,
       brief_providers:    briefProviders,
       enrichment_used:    !!enrichment.news,
       stocks_used:        !!enrichment.stocks,
