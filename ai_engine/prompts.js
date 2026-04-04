@@ -87,6 +87,18 @@ export function buildDigestPrompt(globalDigest, enrichment = {}) {
   if (enrichment.wow?.trim()) {
     enrichmentBlock += `\n${enrichment.wow}\n`;
   }
+  if (enrichment.bdi?.trim()) {
+    enrichmentBlock += `\n${enrichment.bdi}\n`;
+  }
+  if (enrichment.fred_daily?.trim()) {
+    enrichmentBlock += `\n${enrichment.fred_daily}\n`;
+  }
+  if (enrichment.polymarket?.trim()) {
+    enrichmentBlock += `\n${enrichment.polymarket}\n`;
+  }
+  if (enrichment.polymarket_divergence?.trim()) {
+    enrichmentBlock += `\n${enrichment.polymarket_divergence}\n`;
+  }
   if (enrichment.news && Object.keys(enrichment.news).length > 0) {
     const newsLines = Object.entries(enrichment.news)
       .map(([country, headlines]) =>

@@ -32,6 +32,11 @@ from .enrichment.trends import fetch_trends_context, format_trends_for_prompt
 from .memory import MemoryLayer, format_historical_context, format_week_over_week
 from .alerts import check_alerts, format_alerts_for_prompt
 from .sources.stocks import fetch_stock_context, format_stocks_for_prompt
+from .sources.usa.fred_daily import FREDDailySource, format_daily_for_prompt
+from .sources.world.bdi import fetch_bdi, format_bdi_for_prompt
+from .sources.world.polymarket import (
+    fetch_polymarket_signals, format_polymarket_for_prompt, get_divergence_signals
+)
 from .psychohistory.turchin import compute_psi, format_psi_for_prompt, PSIComponents
 from .psychohistory.gdelt import fetch_gdelt_signals, format_gdelt_for_prompt
 from .psychohistory.analogies import find_active_analogies, format_analogies_for_prompt
@@ -188,27 +193,46 @@ async def run_pipeline(
         # Fetch enrichment (RSS + Trends) and save alongside digest
         logger.info("Fetching enrichment (RSS news + Google Trends)...")
         try:
-            news, trends_raw, stock_data, gdelt_signals = await asyncio.gather(
+            news, trends_raw, stock_data, gdelt_signals, bdi_data, polymarket_data = await asyncio.gather(
                 fetch_news_context(),
                 fetch_trends_context(),
                 fetch_stock_context(),
                 fetch_gdelt_signals(),
+                fetch_bdi(),
+                fetch_polymarket_signals(),
                 return_exceptions=True,
             )
             if isinstance(news, Exception):
-                logger.warning(f"RSS fetch failed: {news}"); news = {}
+                logger.warning(f"RSS failed: {news}"); news = {}
             if isinstance(trends_raw, Exception):
-                logger.warning(f"Trends fetch failed: {trends_raw}"); trends_raw = {}
+                logger.warning(f"Trends failed: {trends_raw}"); trends_raw = {}
             if isinstance(stock_data, Exception):
-                logger.warning(f"Stock fetch failed: {stock_data}"); stock_data = {}
+                logger.warning(f"Stocks failed: {stock_data}"); stock_data = {}
             if isinstance(gdelt_signals, Exception):
-                logger.warning(f"GDELT fetch failed: {gdelt_signals}"); gdelt_signals = {}
+                logger.warning(f"GDELT failed: {gdelt_signals}"); gdelt_signals = {}
+            if isinstance(bdi_data, Exception):
+                logger.warning(f"BDI failed: {bdi_data}"); bdi_data = []
+            if isinstance(polymarket_data, Exception):
+                logger.warning(f"Polymarket failed: {polymarket_data}"); polymarket_data = []
+
+            # FRED daily — needs API key, run separately
+            fred_daily_inds: list = []
+            try:
+                async with httpx.AsyncClient(timeout=20) as fred_client:
+                    fred_daily_src = FREDDailySource(fred_client, settings)
+                    fred_daily_inds = await fred_daily_src.fetch_indicators()
+                logger.info(f"FRED daily: {len(fred_daily_inds)} indicators")
+            except Exception as exc:
+                logger.warning(f"FRED daily failed: {exc}")
 
             trends_str = format_trends_for_prompt(trends_raw)
             stocks_str = format_stocks_for_prompt(stock_data)
             gdelt_str  = format_gdelt_for_prompt(gdelt_signals)
+            bdi_str    = format_bdi_for_prompt(bdi_data)
+            fred_daily_str = format_daily_for_prompt(fred_daily_inds)
+            poly_str   = format_polymarket_for_prompt(polymarket_data)
 
-            # Compute Turchin PSI for each country
+            # Compute Turchin PSI
             digest_dict_for_psi = json.loads(out.read_text())
             psi_scores: dict[str, PSIComponents] = {}
             analog_by_country: dict[str, list] = {}
@@ -227,10 +251,20 @@ async def run_pipeline(
             psi_str     = format_psi_for_prompt(psi_scores)
             analogs_str = format_analogies_for_prompt(analog_by_country)
 
+            # Polymarket divergence signal (crowd vs structural reality)
+            poly_divergence = get_divergence_signals(
+                polymarket_data if not isinstance(polymarket_data, Exception) else [],
+                psi_scores,
+            )
+
             enrichment = {
-                "news": news, "trends": trends_str, "trends_raw": trends_raw,
+                "news": news,
+                "trends": trends_str, "trends_raw": trends_raw,
                 "stocks": stocks_str,
-                # Psychohistory context block (passed to AI engine)
+                "bdi": bdi_str,
+                "fred_daily": fred_daily_str,
+                "polymarket": poly_str,
+                "polymarket_divergence": "\n".join(poly_divergence) if poly_divergence else "",
                 "psycho": {
                     "psi":     psi_str,
                     "gdelt":   gdelt_str,

@@ -49,6 +49,10 @@ function buildPsychohistorianPrompt(digest, enrichment, ragCtx, psychoCtx) {
   const analogs = psychoCtx?.analogs ?? '';
   const alerts  = ragCtx?.alerts     ?? '';
   const wow     = ragCtx?.wow        ?? '';
+  const bdi     = enrichment?.bdi    ?? '';
+  const poly    = enrichment?.polymarket ?? '';
+  const polyDiv = enrichment?.polymarket_divergence ?? '';
+  const daily   = enrichment?.fred_daily ?? '';
 
   return `You are the Synthetic Psychohistorian for DataBlitz — a structural analyst trained in:
   1. Turchin's Structural-Demographic Theory (SDT) and Cliodynamics
@@ -74,11 +78,15 @@ CRITICAL FRAMEWORK — Turchin's SDT:
 STRUCTURAL DATA THIS WEEK
 ═══════════════════════════════════════════
 
-${psi ? psi + '\n' : ''}
-${gdelt ? gdelt + '\n' : ''}
-${analogs ? analogs + '\n' : ''}
+${psi    ? psi    + '\n' : ''}
+${gdelt  ? gdelt  + '\n' : ''}
+${analogs? analogs+ '\n' : ''}
+${bdi    ? bdi    + '\n' : ''}
+${daily  ? daily  + '\n' : ''}
+${poly   ? poly   + '\n' : ''}
+${polyDiv? '⚡ CROWD vs STRUCTURE DIVERGENCE:\n' + polyDiv + '\n' : ''}
 ${alerts ? '⚠ THRESHOLD ALERTS:\n' + alerts + '\n' : ''}
-${wow ? wow + '\n' : ''}
+${wow    ? wow    + '\n' : ''}
 
 ═══════════════════════════════════════════
 
