@@ -23,8 +23,8 @@ from pathlib import Path
 import httpx
 
 CF_API   = "https://api.cloudflare.com/client/v4"
-ACCOUNT  = os.environ["CF_ACCOUNT_ID"]
-NS_ID    = os.environ["CF_KV_NAMESPACE"]
+ACCOUNT  = os.environ.get("CF_ACCOUNT_ID",  "f5f50e39cd78518e8c3fcd7fa90b96ea")
+NS_ID    = os.environ.get("CF_KV_NAMESPACE", "517788ccef6d4a15af8267f0d926950a")
 TOKEN    = os.environ["CF_API_TOKEN"]
 
 HEADERS  = {

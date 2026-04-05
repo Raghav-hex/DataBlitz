@@ -3,7 +3,7 @@ name: DataBlitz Weekly Pipeline
 on:
   schedule:
     - cron: "0 4 * * 0"   # Every Sunday 04:00 UTC
-  workflow_dispatch:        # Manual trigger from GitHub UI anytime
+  workflow_dispatch:        # Manual trigger anytime
 
 jobs:
   run_pipeline:
@@ -25,13 +25,13 @@ jobs:
 
       - name: Run ingestion pipeline
         env:
-          FRED_API_KEY:       ${{ secrets.FRED_API_KEY }}
-          NOAA_CDO_TOKEN:     ${{ secrets.NOAA_CDO_TOKEN }}
-          BLS_API_KEY:        ${{ secrets.BLS_API_KEY }}
-          DATA_GOV_IN_KEY:    ${{ secrets.DATA_GOV_IN_KEY }}
-          CACHE_DB_PATH:      ./data/cache/datablitz.sqlite
-          CACHE_TTL_HOURS:    "48"
-          HTTP_TIMEOUT_SECONDS: "30"
+          FRED_API_KEY:          ${{ secrets.FRED_API_KEY }}
+          NOAA_CDO_TOKEN:        ${{ secrets.NOAA_CDO_TOKEN }}
+          BLS_API_KEY:           ${{ secrets.BLS_API_KEY }}
+          DATA_GOV_IN_KEY:       ${{ secrets.DATA_GOV_IN_KEY }}
+          CACHE_DB_PATH:         ./data/cache/datablitz.sqlite
+          CACHE_TTL_HOURS:       "48"
+          HTTP_TIMEOUT_SECONDS:  "30"
         run: python -m ingestion.pipeline --output ./data/digest_latest.json
 
       - name: Set up Node 22
@@ -44,25 +44,25 @@ jobs:
       - name: Install Node deps
         run: cd ai_engine && npm install
 
-      - name: Run AI narrative engine
+      - name: Run AI narrative engine (multi-agent)
         env:
           PUTER_AUTH_TOKEN: ${{ secrets.PUTER_AUTH_TOKEN }}
           GEMINI_API_KEY:   ${{ secrets.GEMINI_API_KEY }}
         run: node ai_engine/index.js --input ./data/digest_latest.json
 
-      - name: Push digest to Cloudflare KV
+      - name: Push to Cloudflare KV + Obsidian vault
         env:
-          CF_ACCOUNT_ID:         ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE:       ${{ secrets.CF_KV_NAMESPACE_ID }}
+          CF_ACCOUNT_ID:         f5f50e39cd78518e8c3fcd7fa90b96ea
+          CF_KV_NAMESPACE:       517788ccef6d4a15af8267f0d926950a
           CF_API_TOKEN:          ${{ secrets.CF_API_TOKEN }}
           OBSIDIAN_VAULT_REPO:   ${{ secrets.OBSIDIAN_VAULT_REPO }}
           OBSIDIAN_GITHUB_TOKEN: ${{ secrets.OBSIDIAN_GITHUB_TOKEN }}
         run: python delivery/push_to_kv.py
 
-      - name: Upload artifacts (debug)
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ github.run_id }}
+          name: datablitz-${{ github.run_id }}
           path: data/
-          retention-days: 7
+          retention-days: 14
