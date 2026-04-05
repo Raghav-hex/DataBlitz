@@ -6,7 +6,7 @@ compatibility_date = "2024-11-01"
 # Then paste the id below
 [[kv_namespaces]]
 binding = "DATABLITZ_KV"
-id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id      = "517788ccef6d4a15af8267f0d926950a"
 
 [vars]
 ENVIRONMENT = "production"
